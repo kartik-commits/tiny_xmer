@@ -558,7 +558,97 @@ the same:
 
 ---
 
+## Part 8 — Subword Tokenization (BPE)
+
+**Files:** `12_bpe.py` (tokenizer, saves `bpe_tokenizer.pkl`), `13_gpt_bpe.py`
+(model). The scaled-up model still invented words (`freeds`) because it spells
+**character by character**. BPE fixes this at the root — the tokenizer level.
+
+### Step 1: Byte-Pair Encoding from scratch
+BPE (used by GPT-2/3/4) learns a vocabulary of frequent **chunks**:
+
+1. Start from raw UTF-8 **bytes** — 256 base tokens.
+2. Count every adjacent token **pair**; merge the most frequent pair into a new
+   token id (256, 257, …).
+3. Repeat `num_merges` times. Common sequences become single tokens.
+
+Two tiny functions do all the work: `get_stats` (count adjacent pairs) and
+`merge` (replace a pair with a new id). We train to a vocab of **512** (256 bytes
++ 256 merges).
+
+**What it learned** (id → text): `'e '`, `'th'`, `'ou'`, `'er'`, `'in'`, `'for'`,
+`' I'`, `'know'` — real word-pieces and whole words, discovered automatically.
+
+**Tokenizing** `"First Citizen:..."` gives pieces like
+`['F','ir','st ','C','it','i','z','en', ...]` and round-trips exactly.
+
+**Compression:** the corpus goes from `1,115,394 chars → 568,210 tokens`
+(**1.96 chars/token**). Text is ~half as long, so a fixed context window sees
+twice as much real text.
+
+> **Why the model output should now contain real words:** it predicts *tokens*,
+> and every token decodes to a real byte-chunk the tokenizer actually observed.
+> It can still combine them oddly (bad grammar), but "misspelled words" largely
+> go away.
+
+### Step 2: Train the GPT on BPE tokens
+`13_gpt_bpe.py` encodes the whole corpus with the BPE tokenizer, then trains the
+**same** GPT architecture (from `gpt_model.py`) with `vocab_size=512`
+(11.08 M params, `block_size=128` tokens ≈ 250 chars of context, 3500 iters).
+
+**Important — losses are not comparable across tokenizers.** Cross-entropy is
+*per token*. Char-level random guessing is `ln(65) ≈ 4.17`; BPE random guessing is
+`ln(512) ≈ 6.24`. A fair cross-tokenizer metric is **bits-per-character**:
+`bpc = (loss / ln 2) / (chars per token)`.
+
+**Result — the output is now real words.** Best val **2.201 bits/char** (vs the
+char-level model's ~2.16). The samples:
+
+```
+Char-level (Part 7):  my might broad freeds and thence be she    <- fake words
+BPE (Part 8):         Too late forbearing a ward. I speaks we
+                      save sweeper ... made a sister and strong,
+                      And, with chises yourselves, after, a king  <- real words
+```
+
+The failure mode **changed**: char-level produced misspelled non-words
+(`freeds`, `Vorgelia`); BPE produces real words in shaky grammar. A few artifacts
+remain where tokens collide oddly (`BOLINGBROKing` = a name token + `ing`), but
+spelling-level gibberish is essentially gone.
+
+**Honest nuance:** BPE did *not* lower bits-per-char here (2.20 vs 2.16). With only
+568 K tokens the model overfits by ~iter 2500 (train loss keeps falling, val
+flattens). On this tiny dataset BPE didn't make the model *more compressive* — it
+changed *what kind* of mistakes it makes (real words, worse grammar). On large
+corpora BPE also improves efficiency; here the win is purely qualitative.
+
+**Artifacts saved:** `ckpt_bpe.pt` (weights), `bpe_tokenizer.pkl` (tokenizer),
+`sample_bpe.txt` (output).
+
+---
+
 ## FAQs for curiosity
+
+**Q: What problem does subword tokenization solve over character-level?**
+Char-level models spell every word from scratch and produce plausible non-words.
+Subword (BPE) tokens are real, observed chunks, so generated text is made of valid
+fragments — far fewer misspellings — and sequences are shorter, so a fixed context
+covers more text.
+
+**Q: How does BPE choose its vocabulary?**
+Greedily and by frequency: starting from bytes, it repeatedly merges the most
+frequent adjacent token pair into a new token, for a fixed number of merges. No
+labels or linguistics — pure statistics over the training text.
+
+**Q: Why can't you compare the BPE model's loss to the char model's loss?**
+Cross-entropy is per-token, and the two use different vocabularies (65 vs 512) and
+different sequence lengths. Lower per-token loss on a bigger vocab isn't
+automatically "better." Convert to bits-per-character to compare fairly.
+
+**Q: Real GPT uses ~50k tokens — why did you use 512?**
+Vocabulary size trades off sequence length against embedding/output-layer size. A
+huge vocab needs far more data and memory than Tiny Shakespeare and a 4GB GPU can
+support; 512 keeps the model trainable while still demonstrating the win.
 
 **Q: Your model made up words like "freeds" — why, and how would you fix it?**
 It's character-level, so it generates letter sequences that are statistically

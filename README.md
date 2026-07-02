@@ -39,8 +39,20 @@ As I crown, thus it bear of another be much;
 
 It learns the `SPEAKER:` play format, character names, English rhythm, and mostly
 real words — the remaining invented spellings (`freeds`) are the character-level
-ceiling, fixed by subword tokenization. (Samples in
-[`sample_output.txt`](sample_output.txt) / [`sample_big.txt`](sample_big.txt).)
+ceiling.
+
+**Part 8** breaks that ceiling with a from-scratch **BPE (subword) tokenizer**:
+the model then predicts real word-pieces, so misspellings largely vanish:
+
+```
+Char-level:  my might broad freeds and thence be she     <- fake words
+BPE (Part 8): Too late forbearing a ward. I speaks we
+              save sweeper ... made a sister and strong,
+              And, with chises yourselves, after, a king  <- real words
+```
+
+(Samples in [`sample_output.txt`](sample_output.txt) /
+[`sample_big.txt`](sample_big.txt) / [`sample_bpe.txt`](sample_bpe.txt).)
 
 ---
 
@@ -59,6 +71,8 @@ ceiling, fixed by subword tokenization. (Samples in
 | 6 | [`09_sampling.py`](09_sampling.py) | Temperature & top-k sampling, prompted generation |
 | 6 | [`10_visualize_attention.py`](10_visualize_attention.py) | Extract & plot attention heatmaps |
 | 7 | [`11_train_bigger.py`](11_train_bigger.py) | Scale up (10.76M params) + best-checkpoint saving |
+| 8 | [`12_bpe.py`](12_bpe.py) | Byte-Pair Encoding tokenizer from scratch |
+| 8 | [`13_gpt_bpe.py`](13_gpt_bpe.py) | Train the GPT on subword tokens → real words |
 
 Scripts 1–8 are self-contained; the Part 6 scripts load a saved checkpoint via
 the reusable model in [`gpt_model.py`](gpt_model.py). Read the matching section
